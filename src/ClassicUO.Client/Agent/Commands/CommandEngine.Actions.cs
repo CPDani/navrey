@@ -480,10 +480,19 @@ namespace ClassicUO.Agent
                 ctx.Print(ctx.Game(w => GameActions.OpenBackpack(w)) ? "Backpack opened" : "No backpack");
             });
 
-            Register("target", "target <serial|self>", "Answer a target cursor", ctx =>
+            Register("target", "target <serial|self> | target <x> <y> [z] [graphic]",
+                     "Answer a target cursor with an object, or with a ground/static tile", ctx =>
             {
                 if (!ctx.RequireInGame())
                 {
+                    return;
+                }
+
+                // A serial is a single token, so two or more arguments are a tile.
+                if (ctx.ArgCount >= 2)
+                {
+                    TargetTile(ctx);
+
                     return;
                 }
 
@@ -520,18 +529,14 @@ namespace ClassicUO.Agent
                 ctx.Print(result ?? $"Targeted {arg}");
             });
 
-            Register("targettile", "targettile <x> <y> [z] [graphic]", "Answer a target cursor with a ground/static tile", ctx =>
+            // `target <x> <y> [z] [graphic]`: answer the cursor with a ground or static tile. z defaults to
+            // the land height, graphic to the topmost static on the tile (at z, if given), else 0 for land.
+            static void TargetTile(CommandContext ctx)
             {
-                if (!ctx.RequireInGame())
-                {
-                    return;
-                }
-
-                if (ctx.ArgCount < 2
-                    || !ushort.TryParse(ctx.Arg(0), out ushort tx)
+                if (!ushort.TryParse(ctx.Arg(0), out ushort tx)
                     || !ushort.TryParse(ctx.Arg(1), out ushort ty))
                 {
-                    ctx.Warn("usage: targettile <x> <y> [z] [graphic]");
+                    ctx.Warn("usage: target <x> <y> [z] [graphic]");
 
                     return;
                 }
@@ -642,7 +647,7 @@ namespace ClassicUO.Agent
                 });
 
                 ctx.Print(result);
-            });
+            }
 
             Register("canceltarget", "canceltarget", "Cancel a pending target cursor", ctx =>
             {
