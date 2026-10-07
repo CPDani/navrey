@@ -572,29 +572,76 @@ namespace ClassicUO.Agent
                         return "nothing is asking for a target";
                     }
 
-                    ushort graphic = haveGraphic ? argGraphic : (ushort)0;
-                    short z = haveZ ? argZ : w.Map.GetTileZ(tx, ty);
+                    Land land = null;
+                    Static top = null;
+                    Static named = null;
 
-                    if (!haveGraphic)
+                    for (GameObject o = w.Map.GetTile(tx, ty); o != null; o = o.TNext)
                     {
-                        // Prefer the topmost static at the tile (at the requested z, if given);
-                        // fall back to the bare land tile (graphic 0).
-                        for (GameObject o = w.Map.GetTile(tx, ty); o != null; o = o.TNext)
+                        if (o is Land l)
                         {
-                            if (o is Static st && (!haveZ || st.Z == argZ))
+                            land = l;
+                        }
+                        else if (o is Static st && (!haveZ || st.Z == argZ))
+                        {
+                            // The list runs bottom to top, so the last match is the topmost.
+                            top = st;
+
+                            if (haveGraphic && st.Graphic == argGraphic)
                             {
-                                graphic = st.Graphic;
-                                z = st.Z;
+                                named = st;
                             }
                         }
                     }
 
+                    ushort graphic;
+                    short z;
+
+                    if (haveGraphic && argGraphic != 0)
+                    {
+                        // The server only accepts a static target that really is at that tile and z,
+                        // and cancels the cursor otherwise - so check before spending the cursor.
+                        if (named == null)
+                        {
+                            return $"no static 0x{argGraphic:X4} at {tx},{ty} z={argZ} - cursor left open";
+                        }
+
+                        graphic = named.Graphic;
+                        z = named.Z;
+                    }
+                    else if (!haveGraphic && top != null)
+                    {
+                        graphic = top.Graphic;
+                        z = top.Z;
+                    }
+                    else if (haveZ)
+                    {
+                        graphic = 0;
+                        z = argZ;
+                    }
+                    else if (land != null)
+                    {
+                        // The land the client has loaded, as a click in the game window would use.
+                        graphic = 0;
+                        z = land.Z;
+                    }
+                    else
+                    {
+                        return $"no map data at {tx},{ty} - cursor left open";
+                    }
+
                     w.TargetManager.Target(graphic, tx, ty, z);
 
-                    return null;
+                    string what = $"{tx},{ty} z={z} graphic=0x{graphic:X4} ({(graphic == 0 ? "land" : "static")})";
+
+                    // A sent target always closes the cursor. One still open means the client
+                    // declined to send it - an object-only cursor offered bare land, say.
+                    return w.TargetManager.IsTargeting
+                        ? $"the cursor did not take tile {what} - it may want an object; cursor left open"
+                        : $"Targeted tile {what}";
                 });
 
-                ctx.Print(result ?? $"Targeted tile {tx},{ty}");
+                ctx.Print(result);
             });
 
             Register("canceltarget", "canceltarget", "Cancel a pending target cursor", ctx =>
