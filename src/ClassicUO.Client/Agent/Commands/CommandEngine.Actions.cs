@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -517,6 +518,83 @@ namespace ClassicUO.Agent
                 });
 
                 ctx.Print(result ?? $"Targeted {arg}");
+            });
+
+            Register("targettile", "targettile <x> <y> [z] [graphic]", "Answer a target cursor with a ground/static tile", ctx =>
+            {
+                if (!ctx.RequireInGame())
+                {
+                    return;
+                }
+
+                if (ctx.ArgCount < 2
+                    || !ushort.TryParse(ctx.Arg(0), out ushort tx)
+                    || !ushort.TryParse(ctx.Arg(1), out ushort ty))
+                {
+                    ctx.Warn("usage: targettile <x> <y> [z] [graphic]");
+
+                    return;
+                }
+
+                bool haveZ = ctx.ArgCount >= 3;
+                sbyte argZ = 0;
+
+                if (haveZ && !sbyte.TryParse(ctx.Arg(2), out argZ))
+                {
+                    ctx.Warn($"could not parse z '{ctx.Arg(2)}'");
+
+                    return;
+                }
+
+                // The graphic is accepted the way `tiles` prints it (0x0CCA) as well as in decimal.
+                bool haveGraphic = ctx.ArgCount >= 4;
+                ushort argGraphic = 0;
+
+                if (haveGraphic)
+                {
+                    string g = ctx.Arg(3);
+                    bool parsed = g.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? ushort.TryParse(g.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out argGraphic)
+                        : ushort.TryParse(g, NumberStyles.Integer, CultureInfo.InvariantCulture, out argGraphic);
+
+                    if (!parsed)
+                    {
+                        ctx.Warn($"could not parse graphic '{g}' (use 0x0CCA or decimal)");
+
+                        return;
+                    }
+                }
+
+                string result = ctx.Game(w =>
+                {
+                    if (!w.TargetManager.IsTargeting)
+                    {
+                        return "nothing is asking for a target";
+                    }
+
+                    ushort graphic = haveGraphic ? argGraphic : (ushort)0;
+                    short z = haveZ ? argZ : w.Map.GetTileZ(tx, ty);
+
+                    if (!haveGraphic)
+                    {
+                        // Prefer the topmost static at the tile (at the requested z, if given);
+                        // fall back to the bare land tile (graphic 0).
+                        for (GameObject o = w.Map.GetTile(tx, ty); o != null; o = o.TNext)
+                        {
+                            if (o is Static st && (!haveZ || st.Z == argZ))
+                            {
+                                graphic = st.Graphic;
+                                z = st.Z;
+                            }
+                        }
+                    }
+
+                    w.TargetManager.Target(graphic, tx, ty, z);
+
+                    return null;
+                });
+
+                ctx.Print(result ?? $"Targeted tile {tx},{ty}");
             });
 
             Register("canceltarget", "canceltarget", "Cancel a pending target cursor", ctx =>
